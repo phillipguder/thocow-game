@@ -354,17 +354,16 @@
   }
 
   function collides(c, p) {
+    const gap = diff().pipeGap;
     const cx1 = c.x - c.w / 2 + 4;
     const cx2 = c.x + c.w / 2 - 4;
     const cy1 = c.y - c.h / 2 + 4;
     const cy2 = c.y + c.h / 2 - 4;
     const px1 = p.x;
     const px2 = p.x + PIPE_WIDTH;
-    // top fence rect: from y=0 to y=p.top
-    // bottom fence rect: from y=p.top+PIPE_GAP to y=H-GROUND_H
     if (cx2 < px1 || cx1 > px2) return false;
     if (cy1 < p.top) return true;
-    if (cy2 > p.top + PIPE_GAP) return true;
+    if (cy2 > p.top + gap) return true;
     return false;
   }
 
