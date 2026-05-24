@@ -89,6 +89,19 @@
     score: () => { beep(880, 0.07, 'triangle', 0.18); setTimeout(() => beep(1320, 0.1, 'triangle', 0.18), 60); },
     hit: () => beep(120, 0.25, 'sawtooth', 0.25),
     die: () => { beep(220, 0.2, 'sawtooth', 0.2); setTimeout(() => beep(110, 0.4, 'sawtooth', 0.2), 180); },
+    warn: () => {
+      // ascending alarm during warning period
+      beep(440, 0.08, 'square', 0.14);
+      setTimeout(() => beep(550, 0.08, 'square', 0.14), 250);
+      setTimeout(() => beep(660, 0.08, 'square', 0.14), 500);
+      setTimeout(() => beep(880, 0.1, 'square', 0.16), 750);
+    },
+    flip: () => {
+      // dramatic whoosh: low to high sweep
+      beep(110, 0.05, 'sawtooth', 0.22);
+      setTimeout(() => beep(660, 0.06, 'sawtooth', 0.22), 40);
+      setTimeout(() => beep(330, 0.12, 'triangle', 0.18), 80);
+    },
   };
 
   // ---------- GAME STATE ----------
@@ -105,19 +118,36 @@
       pipeMinSpacing: 380,
       pipeMaxSpacing: 380,       // fixed pacing
       pipeGap: 180,
-      night: false,
+      theme: 'day',
       fire: false,
+      gravityFlip: false,
     },
     omega: {
       name: 'OMEGA DEDOS',
       baseSpeed: 6.2,
       speedPerPoint: 0.22,
       maxSpeed: 13.5,
-      pipeMinSpacing: 280,       // tight bursts
-      pipeMaxSpacing: 480,       // breathers
+      pipeMinSpacing: 280,
+      pipeMaxSpacing: 480,
       pipeGap: 200,
-      night: true,
+      theme: 'night',
       fire: true,
+      gravityFlip: false,
+    },
+    agonist: {
+      name: 'AGONIST',
+      baseSpeed: 7.5,
+      speedPerPoint: 0.26,
+      maxSpeed: 15.5,
+      pipeMinSpacing: 300,
+      pipeMaxSpacing: 460,
+      pipeGap: 210,              // a hair more room since gravity flips
+      theme: 'hell',
+      fire: true,
+      gravityFlip: true,
+      flipMinFrames: 240,        // 4s @ 60Hz
+      flipMaxFrames: 420,        // 7s
+      flipWarningFrames: 60,     // 1s warning
     },
   };
   let difficulty = 'izi';
@@ -215,6 +245,7 @@
     pipes = [];
     score = 0;
     frame = 0;
+    resetGravity();
     spawnInitialPipes();
   }
 
@@ -280,10 +311,51 @@
   }
   initStars();
 
+  // Embers for hell mode
+  let embers = [];
+  function initEmbers() {
+    embers = [];
+    for (let i = 0; i < 60; i++) {
+      embers.push({
+        x: Math.random() * W,
+        y: Math.random() * (H - GROUND_H),
+        r: 0.6 + Math.random() * 1.8,
+        speed: 0.4 + Math.random() * 0.8,
+        sway: 0.5 + Math.random() * 1.0,
+        phase: Math.random() * Math.PI * 2,
+      });
+    }
+  }
+  initEmbers();
+
+  // ---------- AGONIST: gravity flip state ----------
+  let gravityDir = 1;       // +1 down (normal), -1 up (inverted)
+  let nextFlipFrame = 0;    // frame at which gravity will flip
+  let warningActive = false;
+  let warnedAt = -1;        // frame the latest warning began (-1 = none)
+
+  function resetGravity() {
+    gravityDir = 1;
+    warningActive = false;
+    warnedAt = -1;
+    const d = diff();
+    if (d.gravityFlip) {
+      nextFlipFrame = (d.flipMinFrames + Math.random() * (d.flipMaxFrames - d.flipMinFrames)) | 0;
+    } else {
+      nextFlipFrame = 0;
+    }
+  }
+
+  function scheduleNextFlip() {
+    const d = diff();
+    nextFlipFrame = frame + ((d.flipMinFrames + Math.random() * (d.flipMaxFrames - d.flipMinFrames)) | 0);
+  }
+
   // ---------- INPUT ----------
   // Title-screen buttons (canvas coords)
-  const BTN_IZI   = { x: W / 2 - 110, y: 350, w: 220, h: 56, key: 'izi' };
-  const BTN_OMEGA = { x: W / 2 - 110, y: 425, w: 220, h: 56, key: 'omega' };
+  const BTN_IZI     = { x: W / 2 - 110, y: 348, w: 220, h: 54, key: 'izi' };
+  const BTN_OMEGA   = { x: W / 2 - 110, y: 412, w: 220, h: 54, key: 'omega' };
+  const BTN_AGONIST = { x: W / 2 - 110, y: 476, w: 220, h: 54, key: 'agonist' };
 
   // Skin shop slots
   const SKIN_SLOT_W = 48;
@@ -317,7 +389,7 @@
     best = +(localStorage.getItem(bestKey()) || 0);
     reset();
     state = STATE.PLAYING;
-    cow.vy = FLAP;
+    cow.vy = FLAP * gravityDir;
     sfx.flap();
   }
 
@@ -336,8 +408,9 @@
       for (const slot of SKIN_SLOTS) {
         if (pointInRect(p.x, p.y, slot)) { selectSkin(slot.key); return; }
       }
-      if (pointInRect(p.x, p.y, BTN_IZI))   { selectDifficulty('izi');   return; }
-      if (pointInRect(p.x, p.y, BTN_OMEGA)) { selectDifficulty('omega'); return; }
+      if (pointInRect(p.x, p.y, BTN_IZI))     { selectDifficulty('izi');     return; }
+      if (pointInRect(p.x, p.y, BTN_OMEGA))   { selectDifficulty('omega');   return; }
+      if (pointInRect(p.x, p.y, BTN_AGONIST)) { selectDifficulty('agonist'); return; }
       // Tap anywhere else on READY does nothing — must pick a slot/button
     } else if (state === STATE.PLAYING) {
       cow.vy = FLAP;
@@ -367,7 +440,7 @@
         // keyboard quick-start defaults to current selection
         selectDifficulty(difficulty);
       } else if (state === STATE.PLAYING) {
-        cow.vy = FLAP;
+        cow.vy = FLAP * gravityDir;
         cow.wing = 1;
         sfx.flap();
       } else if (state === STATE.GAMEOVER && gameOverTimer > 30) {
@@ -388,19 +461,46 @@
       c.x -= c.speed;
       if (c.x < -60) { c.x = W + 40; c.y = 40 + Math.random() * 180; c.s = 0.6 + Math.random() * 0.8; }
     }
+    // embers drift downward + sway
+    for (const e of embers) {
+      e.y += e.speed;
+      e.x += Math.sin(frame * 0.04 + e.phase) * 0.4 * e.sway;
+      if (e.y > H - GROUND_H + 10) { e.y = -5; e.x = Math.random() * W; }
+    }
 
     if (state === STATE.READY) {
-      // gentle hover
-      cow.y = H / 2 + Math.sin(frame * 0.08) * 6;
-      cow.rot = Math.sin(frame * 0.08) * 0.05;
+      // park the cow off-screen on the title screen — the skin shop already
+      // shows live previews of each skin
+      cow.y = -200;
+      cow.rot = 0;
       return;
     }
 
     if (state === STATE.PLAYING) {
-      cow.vy += GRAVITY;
+      const d = diff();
+
+      // Gravity flip schedule (AGONIST only)
+      if (d.gravityFlip) {
+        const warnStart = nextFlipFrame - d.flipWarningFrames;
+        if (!warningActive && frame >= warnStart && frame < nextFlipFrame) {
+          warningActive = true;
+          warnedAt = frame;
+          sfx.warn();
+        }
+        if (frame >= nextFlipFrame) {
+          gravityDir = -gravityDir;
+          cow.vy = 0;
+          warningActive = false;
+          sfx.flip();
+          scheduleNextFlip();
+        }
+      }
+
+      cow.vy += GRAVITY * gravityDir;
       if (cow.vy > MAX_FALL) cow.vy = MAX_FALL;
+      if (cow.vy < -MAX_FALL) cow.vy = -MAX_FALL;
       cow.y += cow.vy;
-      cow.rot = Math.max(-0.5, Math.min(1.4, cow.vy * 0.08));
+      cow.rot = Math.max(-0.5, Math.min(1.4, cow.vy * 0.08 * gravityDir));
 
       const speed = currentSpeed();
       grassOffset = (grassOffset + speed) % 30;
@@ -409,7 +509,6 @@
       for (const p of pipes) p.x -= speed;
 
       // recycle / spawn pipes
-      const d = diff();
       const minSp = d.pipeMinSpacing;
       const maxSp = d.pipeMaxSpacing;
       if (pipes.length && pipes[0].x + PIPE_WIDTH < -20) pipes.shift();
@@ -442,8 +541,14 @@
         cow.y = H - GROUND_H - cow.h / 2;
         die();
       } else if (cow.y - cow.h / 2 < 0) {
-        cow.y = cow.h / 2;
-        cow.vy = 0;
+        if (d.gravityFlip) {
+          // ceiling is deadly in AGONIST
+          cow.y = cow.h / 2;
+          die();
+        } else {
+          cow.y = cow.h / 2;
+          cow.vy = 0;
+        }
       }
 
       for (const p of pipes) {
@@ -455,6 +560,7 @@
 
     if (state === STATE.GAMEOVER) {
       gameOverTimer++;
+      // Always fall to the ground (regardless of gravity dir during play)
       if (cow.y + cow.h / 2 < H - GROUND_H) {
         cow.vy += GRAVITY;
         cow.y += cow.vy;
@@ -483,6 +589,9 @@
     if (state !== STATE.PLAYING) return;
     state = STATE.GAMEOVER;
     gameOverTimer = 0;
+    // Always fall down on death, even if gravity was inverted at the moment of death
+    gravityDir = 1;
+    warningActive = false;
     sfx.hit();
     setTimeout(() => sfx.die(), 150);
   }
@@ -499,12 +608,16 @@
   }
 
   function drawBackground() {
-    const night = diff().night;
+    const theme = diff().theme;
     const g = ctx.createLinearGradient(0, 0, 0, H);
-    if (night) {
+    if (theme === 'night') {
       g.addColorStop(0, '#0a0a2e');
       g.addColorStop(0.5, '#1a1448');
       g.addColorStop(1, '#3a1a3a');
+    } else if (theme === 'hell') {
+      g.addColorStop(0, '#1a0202');
+      g.addColorStop(0.5, '#5a0a08');
+      g.addColorStop(1, '#c0301a');
     } else {
       g.addColorStop(0, '#87ceeb');
       g.addColorStop(0.65, '#b8e0e8');
@@ -513,7 +626,7 @@
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, W, H);
 
-    if (night) {
+    if (theme === 'night') {
       // stars
       for (const s of stars) {
         const tw = 0.4 + 0.6 * (0.5 + 0.5 * Math.sin(frame * 0.05 + s.phase));
@@ -531,56 +644,139 @@
       ctx.arc(W - 70, 90, 28, 0, Math.PI * 2);
       ctx.fill();
       ctx.shadowBlur = 0;
-      // crescent shadow
       ctx.fillStyle = '#1a1448';
       ctx.beginPath();
       ctx.arc(W - 60, 84, 24, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
+    } else if (theme === 'hell') {
+      // blood moon / hellsun
+      ctx.save();
+      ctx.shadowColor = 'rgba(255,80,40,0.9)';
+      ctx.shadowBlur = 30;
+      ctx.fillStyle = '#ff3818';
+      ctx.beginPath();
+      ctx.arc(W - 70, 95, 30, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      // darker spots on the sun
+      ctx.fillStyle = '#a01010';
+      ctx.beginPath(); ctx.arc(W - 78, 88, 5, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(W - 62, 102, 4, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+      // falling embers (background atmosphere)
+      for (const e of embers) {
+        const a = 0.4 + 0.6 * Math.sin(e.phase + frame * 0.1);
+        ctx.fillStyle = `rgba(255, ${120 + ((e.x * 13) | 0) % 80}, 30, ${a})`;
+        ctx.beginPath();
+        ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
 
-    // distant hills
-    ctx.fillStyle = night ? '#2a1a3a' : '#8ec56b';
-    ctx.beginPath();
-    ctx.moveTo(0, H - GROUND_H - 30);
-    for (let x = 0; x <= W; x += 40) {
-      const y = H - GROUND_H - 30 - Math.sin(x * 0.02) * 18 - 12;
-      ctx.lineTo(x, y);
-    }
-    ctx.lineTo(W, H - GROUND_H);
-    ctx.lineTo(0, H - GROUND_H);
-    ctx.closePath();
-    ctx.fill();
+    // distant hills / spires
+    if (theme === 'hell') {
+      // jagged dark spires
+      ctx.fillStyle = '#1a0606';
+      ctx.beginPath();
+      ctx.moveTo(0, H - GROUND_H);
+      let x = 0;
+      while (x <= W) {
+        const peakH = 30 + Math.sin(x * 0.07) * 14 + 24;
+        ctx.lineTo(x + 14, H - GROUND_H - peakH);
+        ctx.lineTo(x + 28, H - GROUND_H - 6);
+        x += 28;
+      }
+      ctx.lineTo(W, H - GROUND_H);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      ctx.fillStyle = theme === 'night' ? '#2a1a3a' : '#8ec56b';
+      ctx.beginPath();
+      ctx.moveTo(0, H - GROUND_H - 30);
+      for (let x = 0; x <= W; x += 40) {
+        const y = H - GROUND_H - 30 - Math.sin(x * 0.02) * 18 - 12;
+        ctx.lineTo(x, y);
+      }
+      ctx.lineTo(W, H - GROUND_H);
+      ctx.lineTo(0, H - GROUND_H);
+      ctx.closePath();
+      ctx.fill();
 
-    ctx.fillStyle = night ? '#1a0f24' : '#7ab85a';
-    ctx.beginPath();
-    ctx.moveTo(0, H - GROUND_H - 15);
-    for (let x = 0; x <= W; x += 30) {
-      const y = H - GROUND_H - 15 - Math.cos(x * 0.03 + 1) * 12 - 6;
-      ctx.lineTo(x, y);
+      ctx.fillStyle = theme === 'night' ? '#1a0f24' : '#7ab85a';
+      ctx.beginPath();
+      ctx.moveTo(0, H - GROUND_H - 15);
+      for (let x = 0; x <= W; x += 30) {
+        const y = H - GROUND_H - 15 - Math.cos(x * 0.03 + 1) * 12 - 6;
+        ctx.lineTo(x, y);
+      }
+      ctx.lineTo(W, H - GROUND_H);
+      ctx.lineTo(0, H - GROUND_H);
+      ctx.closePath();
+      ctx.fill();
     }
-    ctx.lineTo(W, H - GROUND_H);
-    ctx.lineTo(0, H - GROUND_H);
-    ctx.closePath();
-    ctx.fill();
 
-    if (!night) {
-      // clouds only in day mode
+    if (theme === 'day') {
       for (const c of clouds) drawCloud(c.x, c.y, c.s);
     }
   }
 
   function drawGround() {
-    const night = diff().night;
-    // grass top
+    const theme = diff().theme;
+    if (theme === 'hell') {
+      // glowing lava top
+      ctx.save();
+      ctx.shadowColor = 'rgba(255,120,30,0.6)';
+      ctx.shadowBlur = 10;
+      const lg = ctx.createLinearGradient(0, H - GROUND_H, 0, H - GROUND_H + 30);
+      lg.addColorStop(0, '#ffd84a');
+      lg.addColorStop(0.4, '#ff7a1a');
+      lg.addColorStop(1, '#a01818');
+      ctx.fillStyle = lg;
+      ctx.fillRect(0, H - GROUND_H, W, 30);
+      ctx.restore();
+      // bright cracks
+      ctx.fillStyle = '#fff080';
+      for (let x = -grassOffset * 2; x < W + 30; x += 36) {
+        ctx.fillRect(x, H - GROUND_H + 4, 14, 2);
+        ctx.fillRect(x + 6, H - GROUND_H + 14, 8, 2);
+      }
+      // bubbling spots
+      for (let i = 0; i < 5; i++) {
+        const seed = i * 41 + Math.floor(frame * 0.4);
+        const bx = ((seed * 53) % (W + 60)) - 30;
+        const cycle = (frame + i * 29) % 90;
+        const r = cycle < 40 ? cycle / 8 : 0;
+        if (r > 0) {
+          ctx.fillStyle = `rgba(255, 220, 80, ${1 - cycle / 40})`;
+          ctx.beginPath();
+          ctx.arc(bx, H - GROUND_H + 6, r, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      // charred rock below
+      const dg = ctx.createLinearGradient(0, H - GROUND_H + 30, 0, H);
+      dg.addColorStop(0, '#2a0606');
+      dg.addColorStop(1, '#0a0202');
+      ctx.fillStyle = dg;
+      ctx.fillRect(0, H - GROUND_H + 30, W, GROUND_H - 30);
+      // glowing fissures in rock
+      ctx.fillStyle = 'rgba(255,80,20,0.6)';
+      for (let i = 0; i < 14; i++) {
+        const sx = ((i * 53 - grassOffset * 1.5) % W + W) % W;
+        const sy = H - GROUND_H + 40 + (i % 4) * 14;
+        ctx.fillRect(sx, sy, 4, 2);
+      }
+      return;
+    }
+
+    const night = theme === 'night';
     ctx.fillStyle = night ? '#2d4422' : '#6ab04c';
     ctx.fillRect(0, H - GROUND_H, W, 14);
-    // grass blade pattern
     ctx.fillStyle = night ? '#1f3318' : '#5aa03c';
     for (let x = -grassOffset; x < W; x += 12) {
       ctx.fillRect(x, H - GROUND_H + 10, 6, 4);
     }
-    // dirt
     const dg = ctx.createLinearGradient(0, H - GROUND_H + 14, 0, H);
     if (night) {
       dg.addColorStop(0, '#4a3320');
@@ -591,7 +787,6 @@
     }
     ctx.fillStyle = dg;
     ctx.fillRect(0, H - GROUND_H + 14, W, GROUND_H - 14);
-    // dirt specks
     ctx.fillStyle = night ? 'rgba(20,12,5,0.5)' : 'rgba(80,55,30,0.4)';
     for (let i = 0; i < 20; i++) {
       const sx = ((i * 53 - grassOffset * 1.5) % W + W) % W;
@@ -772,7 +967,16 @@
 
   // Adorable cow — current game cow
   function drawCow() {
-    drawCowAt(cow.x, cow.y, cow.rot, 1, currentSkin, cow.wing, true);
+    if (gravityDir === -1) {
+      // flip the cow vertically when gravity is inverted
+      ctx.save();
+      ctx.translate(cow.x, cow.y);
+      ctx.scale(1, -1);
+      drawCowAt(0, 0, cow.rot, 1, currentSkin, cow.wing, true);
+      ctx.restore();
+    } else {
+      drawCowAt(cow.x, cow.y, cow.rot, 1, currentSkin, cow.wing, true);
+    }
   }
 
   // Skin-aware cow renderer. Reusable for previews in the skin shop.
@@ -1258,8 +1462,9 @@
     ctx.fillText('escolha sua dificuldade', W / 2, 332);
 
     // Buttons
-    drawButton(BTN_IZI, 'IZI', '#a8e063', '#5ba83a', false);
-    drawButton(BTN_OMEGA, 'OMEGA DEDOS', '#ff5722', '#8a1500', true);
+    drawButton(BTN_IZI, 'IZI', '#a8e063', '#5ba83a', 'none');
+    drawButton(BTN_OMEGA, 'OMEGA DEDOS', '#ff5722', '#8a1500', 'fire');
+    drawButton(BTN_AGONIST, 'AGONIST', '#3a0808', '#100000', 'skull');
 
     ctx.restore();
   }
@@ -1293,7 +1498,8 @@
     ctx.restore();
   }
 
-  function drawButton(btn, label, colorTop, colorBottom, hot) {
+  function drawButton(btn, label, colorTop, colorBottom, decoration) {
+    const hot = decoration && decoration !== 'none';
     ctx.save();
     // pulse for hot button
     const pulse = hot ? 1 + Math.sin(frame * 0.15) * 0.04 : 1;
@@ -1314,19 +1520,32 @@
     ctx.fillStyle = g;
     roundRect(btn.x, btn.y, btn.w, btn.h, 14, true, false);
 
-    // border
-    ctx.strokeStyle = '#2a1a10';
-    ctx.lineWidth = 3;
-    roundRect(btn.x, btn.y, btn.w, btn.h, 14, false, true);
+    // border (red glow for AGONIST)
+    if (decoration === 'skull') {
+      ctx.save();
+      ctx.shadowColor = 'rgba(255,40,40,0.9)';
+      ctx.shadowBlur = 14;
+      ctx.strokeStyle = '#ff2a1a';
+      ctx.lineWidth = 3;
+      roundRect(btn.x, btn.y, btn.w, btn.h, 14, false, true);
+      ctx.restore();
+    } else {
+      ctx.strokeStyle = '#2a1a10';
+      ctx.lineWidth = 3;
+      roundRect(btn.x, btn.y, btn.w, btn.h, 14, false, true);
+    }
 
     // inner highlight stripe
-    ctx.fillStyle = 'rgba(255,255,255,0.25)';
-    roundRect(btn.x + 6, btn.y + 5, btn.w - 12, 10, 6, true, false);
+    ctx.fillStyle = 'rgba(255,255,255,0.15)';
+    roundRect(btn.x + 6, btn.y + 5, btn.w - 12, 8, 6, true, false);
 
-    // tiny flame icons next to OMEGA label
-    if (hot) {
+    // side decorations
+    if (decoration === 'fire') {
       drawTinyFlame(btn.x + 28, cy);
       drawTinyFlame(btn.x + btn.w - 28, cy);
+    } else if (decoration === 'skull') {
+      drawTinySkull(btn.x + 28, cy);
+      drawTinySkull(btn.x + btn.w - 28, cy);
     }
 
     // label
@@ -1334,11 +1553,37 @@
     ctx.textBaseline = 'middle';
     ctx.font = 'bold 22px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
     ctx.lineWidth = 4;
-    ctx.strokeStyle = '#2a1a10';
+    ctx.strokeStyle = decoration === 'skull' ? '#3a0000' : '#2a1a10';
     ctx.strokeText(label, cx, cy + 1);
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = decoration === 'skull' ? '#ffd6c8' : '#ffffff';
     ctx.fillText(label, cx, cy + 1);
 
+    ctx.restore();
+  }
+
+  function drawTinySkull(x, y) {
+    ctx.save();
+    // skull head
+    ctx.fillStyle = '#fff1d6';
+    ctx.strokeStyle = '#2a0808';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(x, y - 2, 7, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+    // jaw
+    ctx.fillRect(x - 4, y + 3, 8, 4);
+    ctx.strokeRect(x - 4, y + 3, 8, 4);
+    // eye sockets
+    ctx.fillStyle = '#2a0808';
+    ctx.beginPath(); ctx.arc(x - 2.6, y - 2, 1.8, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x + 2.6, y - 2, 1.8, 0, Math.PI * 2); ctx.fill();
+    // teeth lines
+    ctx.strokeStyle = '#2a0808';
+    ctx.beginPath();
+    ctx.moveTo(x - 2, y + 3); ctx.lineTo(x - 2, y + 7);
+    ctx.moveTo(x, y + 3); ctx.lineTo(x, y + 7);
+    ctx.moveTo(x + 2, y + 3); ctx.lineTo(x + 2, y + 7);
+    ctx.stroke();
     ctx.restore();
   }
 
@@ -1432,9 +1677,41 @@
     drawGround();
     drawCow();
 
+    if (state === STATE.PLAYING && warningActive) drawGravityWarning();
+
     if (state === STATE.READY) drawTitle();
     drawScore();
     if (state === STATE.GAMEOVER) drawGameOver();
+  }
+
+  function drawGravityWarning() {
+    ctx.save();
+    const pulse = 0.5 + 0.5 * Math.sin(frame * 0.5);
+    // pulsing red border
+    ctx.strokeStyle = `rgba(255,30,30,${0.4 + pulse * 0.5})`;
+    ctx.lineWidth = 10;
+    ctx.strokeRect(5, 5, W - 10, H - 10);
+    // inner glow
+    ctx.shadowColor = 'rgba(255,40,40,0.9)';
+    ctx.shadowBlur = 20;
+    ctx.strokeStyle = `rgba(255,90,40,${0.3 + pulse * 0.4})`;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(12, 12, W - 24, H - 24);
+    ctx.shadowBlur = 0;
+
+    // warning text
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const scale = 1 + pulse * 0.15;
+    ctx.translate(W / 2, 180);
+    ctx.scale(scale, scale);
+    ctx.font = 'bold 30px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = '#3a0000';
+    ctx.strokeText('!! GRAVIDADE !!', 0, 0);
+    ctx.fillStyle = `rgba(255, ${100 + pulse * 100}, 40, 1)`;
+    ctx.fillText('!! GRAVIDADE !!', 0, 0);
+    ctx.restore();
   }
 
   // ---------- LOOP (fixed timestep, frame-rate independent) ----------
