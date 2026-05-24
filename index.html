@@ -100,10 +100,16 @@
   const GRAVITY = 0.32;
   const FLAP = -6.5;
   const MAX_FALL = 9;
-  const PIPE_SPEED = 3.6;
+  const BASE_PIPE_SPEED = 3.6;
+  const SPEED_PER_POINT = 0.08;   // speed increase per point scored
+  const MAX_PIPE_SPEED = 7.5;     // hard cap so it stays playable
   const PIPE_SPACING = 380;       // horizontal gap between pipes
   const PIPE_GAP = 180;            // vertical opening
   const PIPE_WIDTH = 70;
+
+  function currentSpeed() {
+    return Math.min(MAX_PIPE_SPEED, BASE_PIPE_SPEED + score * SPEED_PER_POINT);
+  }
   const GROUND_H = 90;
 
   const cow = {
@@ -211,10 +217,11 @@
       cow.y += cow.vy;
       cow.rot = Math.max(-0.5, Math.min(1.4, cow.vy * 0.08));
 
-      grassOffset = (grassOffset + PIPE_SPEED) % 30;
+      const speed = currentSpeed();
+      grassOffset = (grassOffset + speed) % 30;
 
       // move pipes
-      for (const p of pipes) p.x -= PIPE_SPEED;
+      for (const p of pipes) p.x -= speed;
 
       // recycle / spawn pipes
       if (pipes.length && pipes[0].x + PIPE_WIDTH < -20) pipes.shift();
