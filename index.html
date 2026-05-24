@@ -126,6 +126,61 @@
   function bestKey() { return 'thocow_best_' + difficulty; }
   let best = +(localStorage.getItem(bestKey()) || 0);
 
+  // ---------- SKINS ----------
+  const SKINS = {
+    classic: {
+      name: 'CLÁSSICA',
+      body: '#ffffff', outline: '#2a1a10', spots: '#2a1a10', spotShape: 'blob',
+      horns: '#e8d29a', hornsStyle: 'normal',
+      snout: '#f5b3c0', innerEar: '#f5b3c0', tail: '#2a1a10',
+      wing: '#fff7d6', wingOutline: '#2a1a10',
+      eye: 'normal', extras: [],
+    },
+    brown: {
+      name: 'JERSEY',
+      body: '#a8754c', outline: '#3a200f', spots: '#f5e3c8', spotShape: 'blob',
+      horns: '#e8d29a', hornsStyle: 'normal',
+      snout: '#e88c75', innerEar: '#e8a888', tail: '#3a200f',
+      wing: '#f5deba', wingOutline: '#3a200f',
+      eye: 'normal', extras: [],
+    },
+    robo: {
+      name: 'ROBOCOW',
+      body: '#c0c8d0', outline: '#1a1f28', spots: '#454e58', spotShape: 'rivets',
+      horns: '#8a96a4', hornsStyle: 'antenna',
+      snout: '#7a8290', innerEar: '#454e58', tail: '#454e58',
+      wing: '#a8b0bc', wingOutline: '#1a1f28',
+      eye: 'led-red', extras: ['screws'],
+    },
+    galaxy: {
+      name: 'GALÁXIA',
+      body: '#2a1858', outline: '#0a0820', spots: '#ffffff', spotShape: 'star',
+      horns: '#fff4cf', hornsStyle: 'normal',
+      snout: '#a050d0', innerEar: '#d088f0', tail: '#5a30a0',
+      wing: '#d8c0ff', wingOutline: '#0a0820',
+      eye: 'glow-cyan', extras: ['sparkle', 'glow'],
+    },
+    demon: {
+      name: 'DIABA',
+      body: '#9a1818', outline: '#2a0808', spots: '#3a0808', spotShape: 'blob',
+      horns: '#1a0a0a', hornsStyle: 'devil',
+      snout: '#3a0808', innerEar: '#5a1010', tail: '#3a0808',
+      wing: '#4a0a0a', wingOutline: '#2a0808',
+      eye: 'glow-red', extras: ['fire-tail', 'glow-red'],
+    },
+    unicow: {
+      name: 'UNICOW',
+      body: '#ffe4f1', outline: '#a04878', spots: '#ff8ab8', spotShape: 'heart',
+      horns: '#fff4cf', hornsStyle: 'unicorn',
+      snout: '#ffb8d8', innerEar: '#ffc8e0', tail: '#a888ff',
+      wing: '#c8a8ff', wingOutline: '#a04878',
+      eye: 'normal', extras: ['rainbow-mane', 'sparkle'],
+    },
+  };
+  const SKIN_KEYS = Object.keys(SKINS);
+  let currentSkin = localStorage.getItem('thocow_skin') || 'classic';
+  if (!SKINS[currentSkin]) currentSkin = 'classic';
+
   const GRAVITY = 0.32;
   const FLAP = -6.5;
   const MAX_FALL = 9;
@@ -227,8 +282,23 @@
 
   // ---------- INPUT ----------
   // Title-screen buttons (canvas coords)
-  const BTN_IZI   = { x: W / 2 - 110, y: 320, w: 220, h: 56, key: 'izi' };
-  const BTN_OMEGA = { x: W / 2 - 110, y: 400, w: 220, h: 56, key: 'omega' };
+  const BTN_IZI   = { x: W / 2 - 110, y: 350, w: 220, h: 56, key: 'izi' };
+  const BTN_OMEGA = { x: W / 2 - 110, y: 425, w: 220, h: 56, key: 'omega' };
+
+  // Skin shop slots
+  const SKIN_SLOT_W = 48;
+  const SKIN_SLOT_H = 50;
+  const SKIN_SLOT_GAP = 5;
+  const SKIN_ROW_Y = 225;
+  const SKIN_ROW_TOTAL_W = SKIN_KEYS.length * SKIN_SLOT_W + (SKIN_KEYS.length - 1) * SKIN_SLOT_GAP;
+  const SKIN_ROW_START_X = (W - SKIN_ROW_TOTAL_W) / 2;
+  const SKIN_SLOTS = SKIN_KEYS.map((key, i) => ({
+    key,
+    x: SKIN_ROW_START_X + i * (SKIN_SLOT_W + SKIN_SLOT_GAP),
+    y: SKIN_ROW_Y,
+    w: SKIN_SLOT_W,
+    h: SKIN_SLOT_H,
+  }));
 
   function pointInRect(x, y, r) {
     return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
@@ -251,13 +321,24 @@
     sfx.flap();
   }
 
+  function selectSkin(key) {
+    if (!SKINS[key]) return;
+    currentSkin = key;
+    localStorage.setItem('thocow_skin', key);
+    sfx.score();
+  }
+
   function handleTap(clientX, clientY) {
     ensureAudio();
     if (state === STATE.READY) {
       const p = eventToCanvas(clientX, clientY);
+      // skin shop slots take priority — they're above the difficulty buttons
+      for (const slot of SKIN_SLOTS) {
+        if (pointInRect(p.x, p.y, slot)) { selectSkin(slot.key); return; }
+      }
       if (pointInRect(p.x, p.y, BTN_IZI))   { selectDifficulty('izi');   return; }
       if (pointInRect(p.x, p.y, BTN_OMEGA)) { selectDifficulty('omega'); return; }
-      // Tap anywhere else on READY does nothing — must pick a difficulty
+      // Tap anywhere else on READY does nothing — must pick a slot/button
     } else if (state === STATE.PLAYING) {
       cow.vy = FLAP;
       cow.wing = 1;
@@ -689,14 +770,39 @@
     ctx.restore();
   }
 
-  // Adorable cow
+  // Adorable cow — current game cow
   function drawCow() {
-    ctx.save();
-    ctx.translate(cow.x, cow.y);
-    ctx.rotate(cow.rot);
+    drawCowAt(cow.x, cow.y, cow.rot, 1, currentSkin, cow.wing, true);
+  }
 
-    const w = cow.w;
-    const h = cow.h;
+  // Skin-aware cow renderer. Reusable for previews in the skin shop.
+  function drawCowAt(x, y, rot, scale, skinKey, wingProgress, animated) {
+    const skin = SKINS[skinKey] || SKINS.classic;
+    const w = 46;
+    const h = 34;
+
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rot);
+    ctx.scale(scale, scale);
+
+    // optional aura/glow
+    if (skin.extras.includes('glow')) {
+      ctx.save();
+      ctx.shadowColor = 'rgba(170,120,255,0.7)';
+      ctx.shadowBlur = 20;
+      ctx.fillStyle = skin.body;
+      roundRect(-w / 2, -h / 2, w, h, 12, true, false);
+      ctx.restore();
+    }
+    if (skin.extras.includes('glow-red')) {
+      ctx.save();
+      ctx.shadowColor = 'rgba(255,40,40,0.7)';
+      ctx.shadowBlur = 16;
+      ctx.fillStyle = skin.body;
+      roundRect(-w / 2, -h / 2, w, h, 12, true, false);
+      ctx.restore();
+    }
 
     // shadow underneath
     ctx.fillStyle = 'rgba(0,0,0,0.12)';
@@ -704,64 +810,87 @@
     ctx.ellipse(0, h / 2 + 4, w / 2.2, 4, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // body (white rounded rectangle)
-    ctx.fillStyle = '#ffffff';
+    // body
+    ctx.fillStyle = skin.body;
     roundRect(-w / 2, -h / 2, w, h, 12, true, false);
 
     // body outline
-    ctx.strokeStyle = '#2a1a10';
+    ctx.strokeStyle = skin.outline;
     ctx.lineWidth = 1.5;
     roundRect(-w / 2, -h / 2, w, h, 12, false, true);
 
-    // black spots
-    ctx.fillStyle = '#2a1a10';
-    ctx.beginPath();
-    ctx.ellipse(-6, -2, 7, 5, -0.3, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.ellipse(6, 6, 5, 4, 0.4, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.ellipse(-14, 8, 4, 3, 0.2, 0, Math.PI * 2);
-    ctx.fill();
+    // spots / decorations on body
+    ctx.fillStyle = skin.spots;
+    const bodySpots = [
+      { x: -6, y: -2, rx: 7, ry: 5, rot: -0.3 },
+      { x: 6,  y: 6,  rx: 5, ry: 4, rot: 0.4 },
+      { x: -14, y: 8, rx: 4, ry: 3, rot: 0.2 },
+    ];
+    if (skin.spotShape === 'star') {
+      for (const s of bodySpots) drawStar(s.x, s.y, (s.rx + s.ry) / 2, skin.spots);
+    } else if (skin.spotShape === 'heart') {
+      for (const s of bodySpots) drawHeart(s.x, s.y, (s.rx + s.ry) / 1.4, skin.spots);
+    } else if (skin.spotShape === 'rivets') {
+      const rivets = [
+        [-14, -6], [-6, -8], [4, -7], [12, -5],
+        [-12, 4], [-2, 6], [8, 5], [14, 0],
+        [-16, 10], [16, 9],
+      ];
+      ctx.fillStyle = skin.spots;
+      for (const [rx, ry] of rivets) {
+        ctx.beginPath(); ctx.arc(rx, ry, 1.4, 0, Math.PI * 2); ctx.fill();
+      }
+    } else {
+      for (const s of bodySpots) {
+        ctx.beginPath();
+        ctx.ellipse(s.x, s.y, s.rx, s.ry, s.rot, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
 
-    // legs (little stubs hanging below)
-    ctx.fillStyle = '#2a1a10';
+    // legs
+    ctx.fillStyle = skin.outline;
     ctx.fillRect(-12, h / 2 - 2, 4, 6);
     ctx.fillRect(6, h / 2 - 2, 4, 6);
-    // hooves
     ctx.fillRect(-13, h / 2 + 3, 6, 2);
     ctx.fillRect(5, h / 2 + 3, 6, 2);
 
-    // tail (back-left)
-    ctx.strokeStyle = '#2a1a10';
+    // tail
+    ctx.strokeStyle = skin.tail;
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(-w / 2, -2);
     ctx.quadraticCurveTo(-w / 2 - 8, 2, -w / 2 - 6, 8);
     ctx.stroke();
-    ctx.fillStyle = '#2a1a10';
-    ctx.beginPath();
-    ctx.arc(-w / 2 - 6, 9, 3, 0, Math.PI * 2);
-    ctx.fill();
+    if (skin.extras.includes('fire-tail')) {
+      // flaming tail tuft
+      const t = (animated ? frame : 0) * 0.2;
+      const flick = 1 + 0.2 * Math.sin(t);
+      drawFlameShape(-w / 2 - 6, 8, 8 * flick, 10 * flick, 1, '#ff6a1a');
+      drawFlameShape(-w / 2 - 6, 8, 5 * flick, 7 * flick, 1, '#ffd84a');
+      drawFlameShape(-w / 2 - 6, 8, 2.5 * flick, 4 * flick, 1, '#ffffd0');
+    } else {
+      ctx.fillStyle = skin.tail;
+      ctx.beginPath();
+      ctx.arc(-w / 2 - 6, 9, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
-    // head (front-right, slightly overlapping body)
+    // head position
     const headX = w / 2 - 4;
     const headY = -h / 2 + 6;
-    // ears
-    ctx.fillStyle = '#ffffff';
-    ctx.strokeStyle = '#2a1a10';
+
+    // ears (body color base + inner)
+    ctx.fillStyle = skin.body;
+    ctx.strokeStyle = skin.outline;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.ellipse(headX - 4, headY - 7, 4, 6, -0.6, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
+    ctx.fill(); ctx.stroke();
     ctx.beginPath();
     ctx.ellipse(headX + 8, headY - 7, 4, 6, 0.4, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    // inner ear pink
-    ctx.fillStyle = '#f5b3c0';
+    ctx.fill(); ctx.stroke();
+    ctx.fillStyle = skin.innerEar;
     ctx.beginPath();
     ctx.ellipse(headX - 4, headY - 6, 1.6, 3, -0.6, 0, Math.PI * 2);
     ctx.fill();
@@ -769,72 +898,74 @@
     ctx.ellipse(headX + 8, headY - 6, 1.6, 3, 0.4, 0, Math.PI * 2);
     ctx.fill();
 
-    // horns
-    ctx.fillStyle = '#e8d29a';
-    ctx.strokeStyle = '#2a1a10';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.ellipse(headX - 1, headY - 10, 2, 4, -0.3, 0, Math.PI * 2);
-    ctx.fill(); ctx.stroke();
-    ctx.beginPath();
-    ctx.ellipse(headX + 5, headY - 10, 2, 4, 0.3, 0, Math.PI * 2);
-    ctx.fill(); ctx.stroke();
+    // horns / unicorn horn / antenna / devil horns
+    drawHorns(headX, headY, skin);
 
-    // head circle (white)
-    ctx.fillStyle = '#ffffff';
-    ctx.strokeStyle = '#2a1a10';
+    // rainbow mane (unicow) — drawn behind head circle but in front of horns
+    if (skin.extras.includes('rainbow-mane')) {
+      const maneColors = ['#ff6b9d', '#ffb84d', '#ffe14d', '#7aff8f', '#5dd1ff', '#bb88ff'];
+      for (let i = 0; i < maneColors.length; i++) {
+        ctx.fillStyle = maneColors[i];
+        ctx.beginPath();
+        const mx = headX - 5 + i * 2.4;
+        const my = headY - 4 + (i % 2) * 1.5;
+        ctx.ellipse(mx, my, 2.5, 3.5, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // head circle
+    ctx.fillStyle = skin.body;
+    ctx.strokeStyle = skin.outline;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.arc(headX + 2, headY, 11, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
 
-    // black spot on head
-    ctx.fillStyle = '#2a1a10';
-    ctx.beginPath();
-    ctx.ellipse(headX - 2, headY - 3, 4, 3, -0.4, 0, Math.PI * 2);
-    ctx.fill();
+    // head spot (or skin-specific decoration)
+    if (skin.spotShape === 'star') {
+      drawStar(headX - 1, headY - 3, 3.5, skin.spots);
+    } else if (skin.spotShape === 'heart') {
+      drawHeart(headX - 1, headY - 3, 6, skin.spots);
+    } else if (skin.spotShape === 'rivets') {
+      ctx.fillStyle = skin.spots;
+      ctx.beginPath(); ctx.arc(headX - 4, headY - 2, 1.2, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(headX + 4, headY + 4, 1.2, 0, Math.PI * 2); ctx.fill();
+    } else {
+      ctx.fillStyle = skin.spots;
+      ctx.beginPath();
+      ctx.ellipse(headX - 2, headY - 3, 4, 3, -0.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
-    // snout (pink)
-    ctx.fillStyle = '#f5b3c0';
-    ctx.strokeStyle = '#2a1a10';
+    // snout
+    ctx.fillStyle = skin.snout;
+    ctx.strokeStyle = skin.outline;
     ctx.lineWidth = 1.2;
     ctx.beginPath();
     ctx.ellipse(headX + 5, headY + 4, 6, 4.5, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
+    ctx.fill(); ctx.stroke();
     // nostrils
-    ctx.fillStyle = '#2a1a10';
+    ctx.fillStyle = skin.outline;
     ctx.beginPath(); ctx.arc(headX + 3, headY + 4, 0.9, 0, Math.PI * 2); ctx.fill();
     ctx.beginPath(); ctx.arc(headX + 7, headY + 4, 0.9, 0, Math.PI * 2); ctx.fill();
 
-    // eye
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath();
-    ctx.arc(headX + 5, headY - 2, 2.6, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#2a1a10';
-    ctx.beginPath();
-    ctx.arc(headX + 6, headY - 2, 1.5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath();
-    ctx.arc(headX + 6.4, headY - 2.5, 0.5, 0, Math.PI * 2);
-    ctx.fill();
+    // eye (varies by skin)
+    drawEye(headX + 5, headY - 2, skin);
 
-    // wing (flapping)
-    const wingAngle = -0.6 + cow.wing * 1.4;
+    // wing
+    const wingAngle = -0.6 + (wingProgress || 0) * 1.4;
     ctx.save();
     ctx.translate(-2, -2);
     ctx.rotate(wingAngle);
-    ctx.fillStyle = '#fff7d6';
-    ctx.strokeStyle = '#2a1a10';
+    ctx.fillStyle = skin.wing;
+    ctx.strokeStyle = skin.wingOutline;
     ctx.lineWidth = 1.2;
     ctx.beginPath();
     ctx.ellipse(0, 0, 12, 7, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
-    // feather lines
     ctx.beginPath();
     ctx.moveTo(-4, 0); ctx.lineTo(-9, 3);
     ctx.moveTo(0, 0); ctx.lineTo(-2, 5);
@@ -842,7 +973,200 @@
     ctx.stroke();
     ctx.restore();
 
+    // sparkles (cosmetic, animated)
+    if (skin.extras.includes('sparkle')) {
+      const t = (animated ? frame : 0) * 0.1;
+      for (let i = 0; i < 4; i++) {
+        const ang = t + i * (Math.PI / 2);
+        const r = 22 + Math.sin(t * 2 + i) * 4;
+        const sx = Math.cos(ang) * r;
+        const sy = Math.sin(ang) * r * 0.6;
+        const a = 0.5 + 0.5 * Math.sin(t * 3 + i);
+        ctx.fillStyle = `rgba(255,255,255,${a})`;
+        drawSparkle(sx, sy, 2.5);
+      }
+    }
+
     ctx.restore();
+  }
+
+  function drawHorns(headX, headY, skin) {
+    if (skin.hornsStyle === 'unicorn') {
+      // spiral unicorn horn
+      ctx.save();
+      ctx.translate(headX + 2, headY - 8);
+      const grad = ctx.createLinearGradient(0, 0, 0, -14);
+      grad.addColorStop(0, '#fff4cf');
+      grad.addColorStop(0.5, '#ffd1f0');
+      grad.addColorStop(1, '#c8a8ff');
+      ctx.fillStyle = grad;
+      ctx.strokeStyle = skin.outline;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(-3, 0);
+      ctx.lineTo(0, -14);
+      ctx.lineTo(3, 0);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      // spiral lines
+      ctx.beginPath();
+      ctx.moveTo(-2.4, -2); ctx.lineTo(2.4, -3);
+      ctx.moveTo(-1.8, -5); ctx.lineTo(1.8, -6);
+      ctx.moveTo(-1.2, -8); ctx.lineTo(1.2, -9);
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
+    if (skin.hornsStyle === 'antenna') {
+      // single antenna with a blinking LED
+      ctx.strokeStyle = skin.outline;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(headX + 2, headY - 6);
+      ctx.lineTo(headX + 2, headY - 14);
+      ctx.stroke();
+      const blink = 0.5 + 0.5 * Math.sin(frame * 0.2);
+      ctx.fillStyle = `rgba(255,${60 + 100 * blink},60,1)`;
+      ctx.shadowColor = 'rgba(255,40,40,0.8)';
+      ctx.shadowBlur = 6;
+      ctx.beginPath();
+      ctx.arc(headX + 2, headY - 15, 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      return;
+    }
+    if (skin.hornsStyle === 'devil') {
+      // pointier, curved-out devil horns
+      ctx.fillStyle = skin.horns;
+      ctx.strokeStyle = skin.outline;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(headX - 4, headY - 6);
+      ctx.lineTo(headX - 6, headY - 14);
+      ctx.lineTo(headX - 1, headY - 8);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(headX + 8, headY - 6);
+      ctx.lineTo(headX + 10, headY - 14);
+      ctx.lineTo(headX + 5, headY - 8);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      return;
+    }
+    // normal horns
+    ctx.fillStyle = skin.horns;
+    ctx.strokeStyle = skin.outline;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.ellipse(headX - 1, headY - 10, 2, 4, -0.3, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(headX + 5, headY - 10, 2, 4, 0.3, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+  }
+
+  function drawEye(ex, ey, skin) {
+    if (skin.eye === 'led-red') {
+      ctx.save();
+      ctx.shadowColor = 'rgba(255,40,40,0.8)';
+      ctx.shadowBlur = 8;
+      ctx.fillStyle = '#ff2020';
+      ctx.beginPath();
+      ctx.arc(ex + 1, ey, 2.8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(ex + 1.6, ey - 0.5, 0.8, 0, Math.PI * 2);
+      ctx.fill();
+      return;
+    }
+    if (skin.eye === 'glow-red') {
+      ctx.save();
+      ctx.shadowColor = 'rgba(255,40,40,0.9)';
+      ctx.shadowBlur = 10;
+      ctx.fillStyle = '#ffeb3b';
+      ctx.beginPath();
+      ctx.arc(ex + 1, ey, 2.6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      ctx.fillStyle = '#9a0000';
+      ctx.beginPath();
+      ctx.ellipse(ex + 1.2, ey, 0.7, 2.2, 0, 0, Math.PI * 2);
+      ctx.fill();
+      return;
+    }
+    if (skin.eye === 'glow-cyan') {
+      ctx.save();
+      ctx.shadowColor = 'rgba(110,220,255,0.9)';
+      ctx.shadowBlur = 8;
+      ctx.fillStyle = '#a8f0ff';
+      ctx.beginPath();
+      ctx.arc(ex + 1, ey, 2.6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      ctx.fillStyle = '#0a3050';
+      ctx.beginPath();
+      ctx.arc(ex + 1.4, ey, 1.2, 0, Math.PI * 2);
+      ctx.fill();
+      return;
+    }
+    // normal eye
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(ex, ey, 2.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#2a1a10';
+    ctx.beginPath();
+    ctx.arc(ex + 1, ey, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(ex + 1.4, ey - 0.5, 0.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawStar(cx, cy, r, color) {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    for (let i = 0; i < 5; i++) {
+      const a = -Math.PI / 2 + i * (Math.PI * 2 / 5);
+      const a2 = a + Math.PI / 5;
+      const x1 = cx + Math.cos(a) * r;
+      const y1 = cy + Math.sin(a) * r;
+      const x2 = cx + Math.cos(a2) * r * 0.45;
+      const y2 = cy + Math.sin(a2) * r * 0.45;
+      if (i === 0) ctx.moveTo(x1, y1); else ctx.lineTo(x1, y1);
+      ctx.lineTo(x2, y2);
+    }
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  function drawHeart(cx, cy, size, color) {
+    ctx.fillStyle = color;
+    const s = size / 10;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy + 3 * s);
+    ctx.bezierCurveTo(cx - 6 * s, cy - 1 * s, cx - 6 * s, cy - 5 * s, cx, cy - 2 * s);
+    ctx.bezierCurveTo(cx + 6 * s, cy - 5 * s, cx + 6 * s, cy - 1 * s, cx, cy + 3 * s);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  function drawSparkle(cx, cy, size) {
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - size);
+    ctx.lineTo(cx + size * 0.3, cy - size * 0.3);
+    ctx.lineTo(cx + size, cy);
+    ctx.lineTo(cx + size * 0.3, cy + size * 0.3);
+    ctx.lineTo(cx, cy + size);
+    ctx.lineTo(cx - size * 0.3, cy + size * 0.3);
+    ctx.lineTo(cx - size, cy);
+    ctx.lineTo(cx - size * 0.3, cy - size * 0.3);
+    ctx.closePath();
+    ctx.fill();
   }
 
   function roundRect(x, y, w, h, r, fill, stroke) {
@@ -887,35 +1211,84 @@
     ctx.textBaseline = 'middle';
 
     // Title
-    const y = 130;
-    ctx.font = 'bold 72px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-    ctx.lineWidth = 8;
+    const y = 110;
+    ctx.font = 'bold 64px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    ctx.lineWidth = 7;
     ctx.strokeStyle = '#2a1a10';
     ctx.strokeText('THOCOW', W / 2, y);
-    const grad = ctx.createLinearGradient(0, y - 30, 0, y + 30);
+    const grad = ctx.createLinearGradient(0, y - 26, 0, y + 26);
     grad.addColorStop(0, '#fff8c4');
     grad.addColorStop(1, '#f5b3c0');
     ctx.fillStyle = grad;
     ctx.fillText('THOCOW', W / 2, y);
 
     // subtitle
-    ctx.font = 'bold 18px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-    ctx.lineWidth = 4;
-    ctx.strokeText('A vaquinha voadora', W / 2, y + 44);
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText('A vaquinha voadora', W / 2, y + 44);
-
-    // "escolha sua dificuldade"
     ctx.font = 'bold 16px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    ctx.lineWidth = 4;
+    ctx.strokeText('A vaquinha voadora', W / 2, y + 38);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('A vaquinha voadora', W / 2, y + 38);
+
+    // Skin shop label
+    ctx.font = 'bold 15px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
     ctx.lineWidth = 3;
     ctx.strokeStyle = '#2a1a10';
-    ctx.strokeText('escolha sua dificuldade', W / 2, 285);
+    ctx.strokeText('escolha sua skin', W / 2, 205);
     ctx.fillStyle = '#ffffff';
-    ctx.fillText('escolha sua dificuldade', W / 2, 285);
+    ctx.fillText('escolha sua skin', W / 2, 205);
+
+    // Skin slots
+    for (const slot of SKIN_SLOTS) drawSkinSlot(slot);
+
+    // Selected skin name
+    const sel = SKINS[currentSkin];
+    ctx.font = 'bold 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#2a1a10';
+    ctx.strokeText(sel.name, W / 2, 295);
+    ctx.fillStyle = '#fff4cf';
+    ctx.fillText(sel.name, W / 2, 295);
+
+    // Difficulty label
+    ctx.font = 'bold 15px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#2a1a10';
+    ctx.strokeText('escolha sua dificuldade', W / 2, 332);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('escolha sua dificuldade', W / 2, 332);
 
     // Buttons
     drawButton(BTN_IZI, 'IZI', '#a8e063', '#5ba83a', false);
     drawButton(BTN_OMEGA, 'OMEGA DEDOS', '#ff5722', '#8a1500', true);
+
+    ctx.restore();
+  }
+
+  function drawSkinSlot(slot) {
+    const selected = slot.key === currentSkin;
+    ctx.save();
+
+    // background
+    ctx.fillStyle = selected ? 'rgba(255,244,207,0.95)' : 'rgba(255,255,255,0.55)';
+    roundRect(slot.x, slot.y, slot.w, slot.h, 8, true, false);
+
+    // border
+    ctx.strokeStyle = selected ? '#ffd84a' : '#2a1a10';
+    ctx.lineWidth = selected ? 3 : 1.5;
+    roundRect(slot.x, slot.y, slot.w, slot.h, 8, false, true);
+
+    // mini cow preview
+    const cx = slot.x + slot.w / 2;
+    const cy = slot.y + slot.h / 2 + 2;
+    drawCowAt(cx, cy, 0, 0.62, slot.key, 0.3, true);
+
+    // sparkle overlay on selected slot
+    if (selected) {
+      const p = 0.6 + 0.4 * Math.sin(frame * 0.18);
+      ctx.strokeStyle = `rgba(255,216,74,${p})`;
+      ctx.lineWidth = 3;
+      roundRect(slot.x - 1, slot.y - 1, slot.w + 2, slot.h + 2, 9, false, true);
+    }
 
     ctx.restore();
   }
