@@ -102,7 +102,8 @@
       baseSpeed: 3.6,
       speedPerPoint: 0.18,
       maxSpeed: 10.0,
-      pipeSpacing: 380,
+      pipeMinSpacing: 380,
+      pipeMaxSpacing: 380,       // fixed pacing
       pipeGap: 180,
       night: false,
       fire: false,
@@ -112,8 +113,8 @@
       baseSpeed: 6.2,
       speedPerPoint: 0.22,
       maxSpeed: 13.5,
-      pipeSpacing: 340,
-      pipeSpacingVariance: 110,  // ±110 — irregular pacing
+      pipeMinSpacing: 280,       // tight bursts
+      pipeMaxSpacing: 480,       // breathers
       pipeGap: 200,
       night: true,
       fire: true,
@@ -163,9 +164,11 @@
   }
 
   function spawnInitialPipes() {
-    const spacing = diff().pipeSpacing;
+    const d = diff();
+    let x = W + 100;
     for (let i = 0; i < 3; i++) {
-      addPipe(W + 100 + i * spacing);
+      addPipe(x);
+      x += d.pipeMinSpacing + Math.random() * (d.pipeMaxSpacing - d.pipeMinSpacing);
     }
   }
 
@@ -309,15 +312,18 @@
 
       // recycle / spawn pipes
       const d = diff();
-      const spacing = d.pipeSpacing;
-      const variance = d.pipeSpacingVariance || 0;
+      const minSp = d.pipeMinSpacing;
+      const maxSp = d.pipeMaxSpacing;
       if (pipes.length && pipes[0].x + PIPE_WIDTH < -20) pipes.shift();
       const last = pipes[pipes.length - 1];
       if (!last) {
         addPipe(W + 100);
-      } else if (last.x < W - spacing) {
-        const jitter = variance ? (Math.random() * 2 - 1) * variance : 0;
-        addPipe(last.x + spacing + jitter);
+      } else if (last.x <= W - minSp) {
+        // pick a random spacing in [minSp, maxSp]; clamp so the new pipe
+        // never lands on-screen, even if the previous one overshot
+        const wanted = minSp + Math.random() * (maxSp - minSp);
+        const newX = Math.max(W, last.x + wanted);
+        addPipe(newX);
       }
 
       // scoring
