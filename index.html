@@ -310,7 +310,11 @@
       const spacing = diff().pipeSpacing;
       if (pipes.length && pipes[0].x + PIPE_WIDTH < -20) pipes.shift();
       const last = pipes[pipes.length - 1];
-      if (last.x < W - spacing) addPipe(last.x + spacing);
+      if (!last) {
+        addPipe(W + 100);
+      } else if (last.x < W - spacing) {
+        addPipe(last.x + spacing);
+      }
 
       // scoring
       for (const p of pipes) {
