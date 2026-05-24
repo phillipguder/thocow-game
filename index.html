@@ -176,7 +176,24 @@
     const gap = diff().pipeGap;
     const minTop = 60;
     const maxTop = H - GROUND_H - gap - 60;
-    const top = minTop + Math.random() * (maxTop - minTop);
+    const minCenterAbs = minTop + gap / 2;
+    const maxCenterAbs = maxTop + gap / 2;
+
+    let top;
+    const prev = pipes[pipes.length - 1];
+    if (prev) {
+      // Constrain vertical change so the cow can physically reach the new gap.
+      // Allowed delta scales with horizontal spacing (more time → bigger reachable range).
+      const spacing = x - prev.x;
+      const prevCenter = prev.top + gap / 2;
+      const maxDelta = Math.max(60, spacing * 0.4);
+      const minC = Math.max(minCenterAbs, prevCenter - maxDelta);
+      const maxC = Math.min(maxCenterAbs, prevCenter + maxDelta);
+      const center = minC + Math.random() * (maxC - minC);
+      top = center - gap / 2;
+    } else {
+      top = minTop + Math.random() * (maxTop - minTop);
+    }
     pipes.push({ x, top, passed: false });
   }
 
