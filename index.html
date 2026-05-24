@@ -413,7 +413,7 @@
       if (pointInRect(p.x, p.y, BTN_AGONIST)) { selectDifficulty('agonist'); return; }
       // Tap anywhere else on READY does nothing — must pick a slot/button
     } else if (state === STATE.PLAYING) {
-      cow.vy = FLAP;
+      cow.vy = FLAP * gravityDir;
       cow.wing = 1;
       sfx.flap();
     } else if (state === STATE.GAMEOVER) {
