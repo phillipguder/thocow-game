@@ -95,22 +95,45 @@
   const STATE = { READY: 0, PLAYING: 1, GAMEOVER: 2 };
   let state = STATE.READY;
   let score = 0;
-  let best = +(localStorage.getItem('thocow_best') || 0);
+
+  const DIFFICULTIES = {
+    izi: {
+      name: 'IZI',
+      baseSpeed: 3.6,
+      speedPerPoint: 0.18,
+      maxSpeed: 10.0,
+      pipeSpacing: 380,
+      pipeGap: 180,
+      night: false,
+      fire: false,
+    },
+    omega: {
+      name: 'OMEGA DEDOS',
+      baseSpeed: 6.2,
+      speedPerPoint: 0.22,
+      maxSpeed: 13.5,
+      pipeSpacing: 520,
+      pipeGap: 200,
+      night: true,
+      fire: true,
+    },
+  };
+  let difficulty = 'izi';
+  function diff() { return DIFFICULTIES[difficulty]; }
+
+  function bestKey() { return 'thocow_best_' + difficulty; }
+  let best = +(localStorage.getItem(bestKey()) || 0);
 
   const GRAVITY = 0.32;
   const FLAP = -6.5;
   const MAX_FALL = 9;
-  const BASE_PIPE_SPEED = 3.6;
-  const SPEED_PER_POINT = 0.18;   // speed increase per point scored
-  const MAX_PIPE_SPEED = 10.0;    // hard cap so it stays playable
-  const PIPE_SPACING = 380;       // horizontal gap between pipes
-  const PIPE_GAP = 180;            // vertical opening
   const PIPE_WIDTH = 70;
+  const GROUND_H = 90;
 
   function currentSpeed() {
-    return Math.min(MAX_PIPE_SPEED, BASE_PIPE_SPEED + score * SPEED_PER_POINT);
+    const d = diff();
+    return Math.min(d.maxSpeed, d.baseSpeed + score * d.speedPerPoint);
   }
-  const GROUND_H = 90;
 
   const cow = {
     x: 110,
@@ -139,14 +162,16 @@
   }
 
   function spawnInitialPipes() {
+    const spacing = diff().pipeSpacing;
     for (let i = 0; i < 3; i++) {
-      addPipe(W + 100 + i * PIPE_SPACING);
+      addPipe(W + 100 + i * spacing);
     }
   }
 
   function addPipe(x) {
+    const gap = diff().pipeGap;
     const minTop = 60;
-    const maxTop = H - GROUND_H - PIPE_GAP - 60;
+    const maxTop = H - GROUND_H - gap - 60;
     const top = minTop + Math.random() * (maxTop - minTop);
     pipes.push({ x, top, passed: false });
   }
@@ -164,13 +189,54 @@
   }
   initClouds();
 
+  // Stars for night mode
+  let stars = [];
+  function initStars() {
+    stars = [];
+    for (let i = 0; i < 80; i++) {
+      stars.push({
+        x: Math.random() * W,
+        y: Math.random() * (H - GROUND_H - 80),
+        r: 0.5 + Math.random() * 1.5,
+        phase: Math.random() * Math.PI * 2,
+      });
+    }
+  }
+  initStars();
+
   // ---------- INPUT ----------
-  function flap() {
+  // Title-screen buttons (canvas coords)
+  const BTN_IZI   = { x: W / 2 - 110, y: 320, w: 220, h: 56, key: 'izi' };
+  const BTN_OMEGA = { x: W / 2 - 110, y: 400, w: 220, h: 56, key: 'omega' };
+
+  function pointInRect(x, y, r) {
+    return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+  }
+
+  function eventToCanvas(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: (clientX - rect.left) * (W / rect.width),
+      y: (clientY - rect.top)  * (H / rect.height),
+    };
+  }
+
+  function selectDifficulty(key) {
+    difficulty = key;
+    best = +(localStorage.getItem(bestKey()) || 0);
+    reset();
+    state = STATE.PLAYING;
+    cow.vy = FLAP;
+    sfx.flap();
+  }
+
+  function handleTap(clientX, clientY) {
     ensureAudio();
     if (state === STATE.READY) {
-      state = STATE.PLAYING;
-      cow.vy = FLAP;
-      sfx.flap();
+      const p = eventToCanvas(clientX, clientY);
+      if (pointInRect(p.x, p.y, BTN_IZI))   { selectDifficulty('izi');   return; }
+      if (pointInRect(p.x, p.y, BTN_OMEGA)) { selectDifficulty('omega'); return; }
+      // Tap anywhere else on READY does nothing — must pick a difficulty
     } else if (state === STATE.PLAYING) {
       cow.vy = FLAP;
       cow.wing = 1;
@@ -183,12 +249,29 @@
     }
   }
 
-  window.addEventListener('mousedown', e => { e.preventDefault(); flap(); });
-  window.addEventListener('touchstart', e => { e.preventDefault(); flap(); }, { passive: false });
+  window.addEventListener('mousedown', e => {
+    e.preventDefault();
+    handleTap(e.clientX, e.clientY);
+  });
+  window.addEventListener('touchstart', e => {
+    e.preventDefault();
+    const t = e.touches[0] || e.changedTouches[0];
+    if (t) handleTap(t.clientX, t.clientY);
+  }, { passive: false });
   window.addEventListener('keydown', e => {
     if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
       e.preventDefault();
-      flap();
+      if (state === STATE.READY) {
+        // keyboard quick-start defaults to current selection
+        selectDifficulty(difficulty);
+      } else if (state === STATE.PLAYING) {
+        cow.vy = FLAP;
+        cow.wing = 1;
+        sfx.flap();
+      } else if (state === STATE.GAMEOVER && gameOverTimer > 30) {
+        reset();
+        state = STATE.READY;
+      }
     }
   });
 
@@ -224,9 +307,10 @@
       for (const p of pipes) p.x -= speed;
 
       // recycle / spawn pipes
+      const spacing = diff().pipeSpacing;
       if (pipes.length && pipes[0].x + PIPE_WIDTH < -20) pipes.shift();
       const last = pipes[pipes.length - 1];
-      if (last.x < W - PIPE_SPACING) addPipe(last.x + PIPE_SPACING);
+      if (last.x < W - spacing) addPipe(last.x + spacing);
 
       // scoring
       for (const p of pipes) {
@@ -235,7 +319,7 @@
           score++;
           if (score > best) {
             best = score;
-            localStorage.setItem('thocow_best', best);
+            localStorage.setItem(bestKey(), best);
           }
           sfx.score();
         }
@@ -304,16 +388,48 @@
   }
 
   function drawBackground() {
-    // sky gradient is on canvas CSS but we redraw for clarity
+    const night = diff().night;
     const g = ctx.createLinearGradient(0, 0, 0, H);
-    g.addColorStop(0, '#87ceeb');
-    g.addColorStop(0.65, '#b8e0e8');
-    g.addColorStop(1, '#d6efb0');
+    if (night) {
+      g.addColorStop(0, '#0a0a2e');
+      g.addColorStop(0.5, '#1a1448');
+      g.addColorStop(1, '#3a1a3a');
+    } else {
+      g.addColorStop(0, '#87ceeb');
+      g.addColorStop(0.65, '#b8e0e8');
+      g.addColorStop(1, '#d6efb0');
+    }
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, W, H);
 
+    if (night) {
+      // stars
+      for (const s of stars) {
+        const tw = 0.4 + 0.6 * (0.5 + 0.5 * Math.sin(frame * 0.05 + s.phase));
+        ctx.fillStyle = `rgba(255, 255, 230, ${tw})`;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // moon
+      ctx.save();
+      ctx.shadowColor = 'rgba(255,240,200,0.6)';
+      ctx.shadowBlur = 18;
+      ctx.fillStyle = '#fff4cf';
+      ctx.beginPath();
+      ctx.arc(W - 70, 90, 28, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      // crescent shadow
+      ctx.fillStyle = '#1a1448';
+      ctx.beginPath();
+      ctx.arc(W - 60, 84, 24, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
     // distant hills
-    ctx.fillStyle = '#8ec56b';
+    ctx.fillStyle = night ? '#2a1a3a' : '#8ec56b';
     ctx.beginPath();
     ctx.moveTo(0, H - GROUND_H - 30);
     for (let x = 0; x <= W; x += 40) {
@@ -325,7 +441,7 @@
     ctx.closePath();
     ctx.fill();
 
-    ctx.fillStyle = '#7ab85a';
+    ctx.fillStyle = night ? '#1a0f24' : '#7ab85a';
     ctx.beginPath();
     ctx.moveTo(0, H - GROUND_H - 15);
     for (let x = 0; x <= W; x += 30) {
@@ -337,27 +453,35 @@
     ctx.closePath();
     ctx.fill();
 
-    // clouds
-    for (const c of clouds) drawCloud(c.x, c.y, c.s);
+    if (!night) {
+      // clouds only in day mode
+      for (const c of clouds) drawCloud(c.x, c.y, c.s);
+    }
   }
 
   function drawGround() {
+    const night = diff().night;
     // grass top
-    ctx.fillStyle = '#6ab04c';
+    ctx.fillStyle = night ? '#2d4422' : '#6ab04c';
     ctx.fillRect(0, H - GROUND_H, W, 14);
     // grass blade pattern
-    ctx.fillStyle = '#5aa03c';
+    ctx.fillStyle = night ? '#1f3318' : '#5aa03c';
     for (let x = -grassOffset; x < W; x += 12) {
       ctx.fillRect(x, H - GROUND_H + 10, 6, 4);
     }
     // dirt
     const dg = ctx.createLinearGradient(0, H - GROUND_H + 14, 0, H);
-    dg.addColorStop(0, '#c69c6d');
-    dg.addColorStop(1, '#8a6240');
+    if (night) {
+      dg.addColorStop(0, '#4a3320');
+      dg.addColorStop(1, '#2a1d12');
+    } else {
+      dg.addColorStop(0, '#c69c6d');
+      dg.addColorStop(1, '#8a6240');
+    }
     ctx.fillStyle = dg;
     ctx.fillRect(0, H - GROUND_H + 14, W, GROUND_H - 14);
     // dirt specks
-    ctx.fillStyle = 'rgba(80,55,30,0.4)';
+    ctx.fillStyle = night ? 'rgba(20,12,5,0.5)' : 'rgba(80,55,30,0.4)';
     for (let i = 0; i < 20; i++) {
       const sx = ((i * 53 - grassOffset * 1.5) % W + W) % W;
       const sy = H - GROUND_H + 24 + (i % 5) * 12;
@@ -367,8 +491,79 @@
 
   // Wooden fence obstacle (replaces flappy pipe)
   function drawFence(p) {
+    const d = diff();
+    const gap = d.pipeGap;
     drawFenceSegment(p.x, 0, PIPE_WIDTH, p.top, true);            // top hangs from sky
-    drawFenceSegment(p.x, p.top + PIPE_GAP, PIPE_WIDTH, H - GROUND_H - (p.top + PIPE_GAP), false);
+    drawFenceSegment(p.x, p.top + gap, PIPE_WIDTH, H - GROUND_H - (p.top + gap), false);
+
+    if (d.fire) {
+      // flames on gap-facing edges
+      drawFlames(p.x - 4, p.top, PIPE_WIDTH + 8, +1);              // top fence — flames lick down
+      drawFlames(p.x - 4, p.top + gap, PIPE_WIDTH + 8, -1);        // bottom fence — flames rise up
+    }
+  }
+
+  function drawFlames(x, edgeY, w, dir) {
+    // dir: -1 = flames extend upward from edgeY (bottom fence top edge)
+    //      +1 = flames extend downward from edgeY (top fence bottom edge)
+    const flameCount = 7;
+    const flameW = w / flameCount;
+    const t = frame * 0.18;
+
+    for (let i = 0; i < flameCount; i++) {
+      const cx = x + i * flameW + flameW / 2;
+      const flicker = 0.5 + 0.5 * (Math.sin(t + i * 1.7) * 0.5 + Math.sin(t * 1.4 + i * 0.9) * 0.5);
+      const baseH = 22 + flicker * 14;
+
+      // outer flame (orange) with glow
+      ctx.save();
+      ctx.shadowColor = 'rgba(255,120,30,0.7)';
+      ctx.shadowBlur = 12;
+      drawFlameShape(cx, edgeY, flameW * 1.05, baseH, dir, '#ff6a1a');
+      ctx.restore();
+      // mid flame (yellow-orange)
+      drawFlameShape(cx, edgeY, flameW * 0.75, baseH * 0.78, dir, '#ffb830');
+      // inner flame (yellow)
+      drawFlameShape(cx, edgeY, flameW * 0.5, baseH * 0.55, dir, '#ffe680');
+      // core (near-white)
+      drawFlameShape(cx, edgeY, flameW * 0.28, baseH * 0.32, dir, '#ffffd0');
+    }
+
+    // floating embers
+    for (let i = 0; i < 4; i++) {
+      const seed = i * 37 + (frame * 0.6 | 0);
+      const px = x + ((seed * 53) % w);
+      const offset = ((frame * 1.3 + i * 41) % 60);
+      const py = edgeY + dir * -offset; // embers drift toward the gap
+      const a = 1 - offset / 60;
+      ctx.fillStyle = `rgba(255, ${160 + (i*30)%80}, 60, ${a * 0.8})`;
+      ctx.beginPath();
+      ctx.arc(px, py, 1.4 + (i % 2) * 0.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function drawFlameShape(cx, baseY, w, h, dir, color) {
+    // draw teardrop-ish flame: wide at base, pointy at tip
+    const tipY = baseY + dir * h;
+    const halfW = w / 2;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(cx - halfW, baseY);
+    // left side curve to tip
+    ctx.bezierCurveTo(
+      cx - halfW * 0.7, baseY + dir * h * 0.55,
+      cx - halfW * 0.2, baseY + dir * h * 0.85,
+      cx, tipY
+    );
+    // right side curve back to base
+    ctx.bezierCurveTo(
+      cx + halfW * 0.2, baseY + dir * h * 0.85,
+      cx + halfW * 0.7, baseY + dir * h * 0.55,
+      cx + halfW, baseY
+    );
+    ctx.closePath();
+    ctx.fill();
   }
 
   function drawFenceSegment(x, y, w, h, flipped) {
@@ -673,29 +868,84 @@
     ctx.fillStyle = grad;
     ctx.fillText('THOCOW', W / 2, y);
 
-    // little udder hint subtitle
+    // subtitle
     ctx.font = 'bold 18px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
     ctx.lineWidth = 4;
     ctx.strokeText('A vaquinha voadora', W / 2, y + 44);
     ctx.fillStyle = '#ffffff';
     ctx.fillText('A vaquinha voadora', W / 2, y + 44);
 
-    // Tap to play (pulse)
-    const pulse = 1 + Math.sin(frame * 0.12) * 0.05;
-    ctx.translate(W / 2, H - 200);
-    ctx.scale(pulse, pulse);
-    ctx.font = 'bold 22px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-    ctx.lineWidth = 5;
-    ctx.strokeStyle = '#2a1a10';
-    ctx.strokeText('Toque para voar', 0, 0);
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText('Toque para voar', 0, 0);
-
-    ctx.font = '14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    // "escolha sua dificuldade"
+    ctx.font = 'bold 16px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
     ctx.lineWidth = 3;
-    ctx.strokeText('(ou ESPAÇO)', 0, 24);
-    ctx.fillText('(ou ESPAÇO)', 0, 24);
+    ctx.strokeStyle = '#2a1a10';
+    ctx.strokeText('escolha sua dificuldade', W / 2, 285);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('escolha sua dificuldade', W / 2, 285);
 
+    // Buttons
+    drawButton(BTN_IZI, 'IZI', '#a8e063', '#5ba83a', false);
+    drawButton(BTN_OMEGA, 'OMEGA DEDOS', '#ff5722', '#8a1500', true);
+
+    ctx.restore();
+  }
+
+  function drawButton(btn, label, colorTop, colorBottom, hot) {
+    ctx.save();
+    // pulse for hot button
+    const pulse = hot ? 1 + Math.sin(frame * 0.15) * 0.04 : 1;
+    const cx = btn.x + btn.w / 2;
+    const cy = btn.y + btn.h / 2;
+    ctx.translate(cx, cy);
+    ctx.scale(pulse, pulse);
+    ctx.translate(-cx, -cy);
+
+    // shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    roundRect(btn.x + 3, btn.y + 5, btn.w, btn.h, 14, true, false);
+
+    // body gradient
+    const g = ctx.createLinearGradient(0, btn.y, 0, btn.y + btn.h);
+    g.addColorStop(0, colorTop);
+    g.addColorStop(1, colorBottom);
+    ctx.fillStyle = g;
+    roundRect(btn.x, btn.y, btn.w, btn.h, 14, true, false);
+
+    // border
+    ctx.strokeStyle = '#2a1a10';
+    ctx.lineWidth = 3;
+    roundRect(btn.x, btn.y, btn.w, btn.h, 14, false, true);
+
+    // inner highlight stripe
+    ctx.fillStyle = 'rgba(255,255,255,0.25)';
+    roundRect(btn.x + 6, btn.y + 5, btn.w - 12, 10, 6, true, false);
+
+    // tiny flame icons next to OMEGA label
+    if (hot) {
+      drawTinyFlame(btn.x + 28, cy);
+      drawTinyFlame(btn.x + btn.w - 28, cy);
+    }
+
+    // label
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = 'bold 22px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = '#2a1a10';
+    ctx.strokeText(label, cx, cy + 1);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(label, cx, cy + 1);
+
+    ctx.restore();
+  }
+
+  function drawTinyFlame(x, y) {
+    ctx.save();
+    ctx.shadowColor = 'rgba(255,140,40,0.8)';
+    ctx.shadowBlur = 6;
+    drawFlameShape(x, y + 8, 12, 16, -1, '#ff6a1a');
+    drawFlameShape(x, y + 8, 8, 11, -1, '#ffd84a');
+    drawFlameShape(x, y + 8, 4, 6, -1, '#ffffd0');
     ctx.restore();
   }
 
