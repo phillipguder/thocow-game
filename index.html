@@ -183,8 +183,8 @@
     }
   }
 
-  canvas.addEventListener('mousedown', e => { e.preventDefault(); flap(); });
-  canvas.addEventListener('touchstart', e => { e.preventDefault(); flap(); }, { passive: false });
+  window.addEventListener('mousedown', e => { e.preventDefault(); flap(); });
+  window.addEventListener('touchstart', e => { e.preventDefault(); flap(); }, { passive: false });
   window.addEventListener('keydown', e => {
     if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
       e.preventDefault();
